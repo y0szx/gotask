@@ -9,7 +9,7 @@ import (
 	"phone_book/internal/storage"
 )
 
-const filename = "telephone_book.json"
+const filename = "orders.json"
 
 func main() {
 	storageJSON := storage.NewStorage(filename)
