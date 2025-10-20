@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"phone_book/internal/models"
 )
@@ -15,7 +16,7 @@ func NewStorage(fileName string) Storage {
 	return Storage{fileName: fileName}
 }
 
-func (s Storage) AddContact(telephone models.Telephone) error {
+func (s Storage) AcceptOrder(order models.Order) error {
 	if _, err := os.Stat(s.fileName); errors.Is(err, os.ErrNotExist) {
 		if errCreateFile := s.createFile(); errCreateFile != nil {
 			return errCreateFile
@@ -26,12 +27,12 @@ func (s Storage) AddContact(telephone models.Telephone) error {
 		return err
 	}
 
-	var records []telephoneRecord
+	var records []orderRecord
 	if errUnmarshal := json.Unmarshal(b, &records); errUnmarshal != nil {
 		return errUnmarshal
 	}
 
-	records = append(records, transform(telephone))
+	records = append(records, transform(order))
 
 	bWrite, errMarshal := json.MarshalIndent(records, "  ", "  ")
 	if errMarshal != nil {
@@ -41,16 +42,16 @@ func (s Storage) AddContact(telephone models.Telephone) error {
 	return os.WriteFile(s.fileName, bWrite, 0666)
 }
 
-func (s Storage) ReWrite(telephones []models.Telephone) error {
+func (s Storage) ReWrite(orders []models.Order) error {
 	if _, err := os.Stat(s.fileName); errors.Is(err, os.ErrNotExist) {
 		if errCreateFile := s.createFile(); errCreateFile != nil {
 			return errCreateFile
 		}
 	}
 
-	var records []telephoneRecord
-	for _, telephone := range telephones {
-		records = append(records, transform(telephone))
+	var records []orderRecord
+	for _, order := range orders {
+		records = append(records, transform(order))
 	}
 
 	bWrite, errMarshal := json.MarshalIndent(records, "  ", "  ")
@@ -62,22 +63,94 @@ func (s Storage) ReWrite(telephones []models.Telephone) error {
 
 }
 
-func (s Storage) ListContact() ([]models.Telephone, error) {
+func (s Storage) ListOrders(order models.Order) ([]models.Order, error) {
 	b, err := os.ReadFile(s.fileName)
 	if err != nil {
 		return nil, err
 	}
 
-	var records []telephoneRecord
+	var records []orderRecord
 	if errUnmarshal := json.Unmarshal(b, &records); errUnmarshal != nil {
 		return nil, errUnmarshal
 	}
 
-	result := make([]models.Telephone, 0, len(records))
+	result := make([]models.Order, 0, len(records))
 	for _, record := range records {
-		result = append(result, record.toDomain())
+		if order.Customer_id == 0 || record.Customer_id == order.Customer_id {
+			result = append(result, record.toDomain())
+		}
 	}
 	return result, nil
+}
+
+func (s Storage) ReturnOrder(order models.Order) error {
+	b, err := os.ReadFile(s.fileName)
+	if err != nil {
+		return err
+	}
+
+	var records []orderRecord
+	if errUnmarshal := json.Unmarshal(b, &records); errUnmarshal != nil {
+		return errUnmarshal
+	}
+
+	found := false
+	for i, record := range records {
+		if record.Order_id == order.Order_id {
+			records[i].Deleted = true
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("заказ %d не найден", order.Order_id)
+	}
+
+	updatedData, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(s.fileName, updatedData, 0644)
+}
+
+func (s Storage) IssueOrder(ordersIds []int) error {
+	b, err := os.ReadFile(s.fileName)
+	if err != nil {
+		return err
+	}
+
+	var records []orderRecord
+	if errUnmarshal := json.Unmarshal(b, &records); errUnmarshal != nil {
+		return errUnmarshal
+	}
+
+	idSet := make(map[int]struct{}, len(ordersIds))
+	for _, id := range ordersIds {
+		idSet[id] = struct{}{}
+	}
+
+	marked := make(map[int]bool, len(ordersIds))
+	for i := range records {
+		if _, ok := idSet[records[i].Order_id]; ok {
+			records[i].Issued = true
+			marked[records[i].Order_id] = true
+		}
+	}
+
+	for _, id := range ordersIds {
+		if !marked[id] {
+			return fmt.Errorf("заказ %d не найден", id)
+		}
+	}
+
+	updatedData, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(s.fileName, updatedData, 0644)
 }
 
 func (s Storage) createFile() error {

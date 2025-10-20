@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"os"
 	"phone_book/internal/models"
+	"strconv"
+	"strings"
 )
 
 type Module interface {
-	AddContact(telephone models.Telephone) error
-	ListContact() ([]models.Telephone, error)
-	DeleteContact(telephone models.Telephone) error
-	FindContact(telephone models.Telephone) (models.Telephone, error)
+	AcceptOrder(order models.Order) error
+	ReturnOrder(order models.Order) error
+	ListOrders(order models.Order) ([]models.Order, error)
+	IssueOrder(ordersId []int) error
 }
 
 type Deps struct {
@@ -33,20 +35,28 @@ func NewCli(d Deps) CLI {
 				description: "справка",
 			},
 			{
-				name:        addContact,
-				description: "добавить контакт: использование add --name=SomeName --telephone=+79191111111",
+				name:        acceptOrder,
+				description: "принять заказ от курьера: использование acceptOrder --order_id=someId --customer_id=someId --shelf_life=someDate",
 			},
 			{
-				name:        listContact,
-				description: "удалить контакт: использование list",
+				name:        returnOrder,
+				description: "вернуть заказ курьеру: использование returnOrder --order_id=someId",
 			},
 			{
-				name:        deleteContact,
-				description: "удалить контакт: использование delete --name=SomeName",
+				name:        issueOrder,
+				description: "выдать заказ клиенту: использование issueOrder --orders_id=[id1, id2, id3, ...]",
 			},
 			{
-				name:        findContact,
-				description: "найти контакт: использование find --name=SomeName",
+				name:        listOrders,
+				description: "получить список заказов: использование listOrders --customer_id=someId (--last_n=n)",
+			},
+			{
+				name:        acceptReturn,
+				description: "принять возврат от клиента: использование acceptReturn --customer_id=someId --order_id=someId",
+			},
+			{
+				name:        listReturns,
+				description: "получить список возвратов: использование listReturns --customer_id=someId",
 			},
 		},
 	}
@@ -63,94 +73,181 @@ func (c CLI) Run() error {
 	case help:
 		c.help()
 		return nil
-	case addContact:
-		return c.addContact(args[1:])
-	case listContact:
-		return c.listContact()
-	case deleteContact:
-		return c.deleteContact(args[1:])
-	case findContact:
-		return c.findContact(args[1:])
+	case acceptOrder:
+		return c.acceptOrder(args[1:])
+	case returnOrder:
+		return c.returnOrder(args[1:])
+	case listOrders:
+		return c.listOrders(args[1:])
+	case issueOrder:
+		return c.issueOrder(args[1:])
 	}
 	return fmt.Errorf("command isn't set")
 }
 
-func (c CLI) addContact(args []string) error {
-	var name, telephone string
+func (c CLI) acceptOrder(args []string) error {
+	var order_id, customer_id int
+	var shelf_life string
 
-	fs := flag.NewFlagSet(addContact, flag.ContinueOnError)
-	fs.StringVar(&name, "name", "", "use --name=SomeName")
-	fs.StringVar(&telephone, "telephone", "", "use --telephone=+71111111111")
+	fs := flag.NewFlagSet(acceptOrder, flag.ContinueOnError)
+	fs.IntVar(&order_id, "order_id", 0, "use --order_id=SomeId")
+	fs.IntVar(&customer_id, "customer_id", 0, "use --customer_id=SomeId")
+	fs.StringVar(&shelf_life, "shelf_life", "", "use --shelf_life=SomeDate")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	if len(name) == 0 {
-		return errors.New("name is empty")
+	if order_id == 0 {
+		return errors.New("order_id is empty")
 	}
 
-	if len(telephone) == 0 {
-		return errors.New("telephone is empty")
+	if customer_id == 0 {
+		return errors.New("customer_id is empty")
 	}
-	return c.Module.AddContact(models.Telephone{
-		Name:      models.Name(name),
-		Telephone: models.Number(telephone),
+
+	if len(shelf_life) == 0 {
+		return errors.New("shelf life is empty")
+	}
+	return c.Module.AcceptOrder(models.Order{
+		Order_id:    order_id,
+		Customer_id: customer_id,
+		Shelf_life:  shelf_life,
+		Issued:      false,
+		Deleted:     false,
+		Returned:    false,
 	})
 }
 
-func (c CLI) listContact() error {
-	list, err := c.Module.ListContact()
-	if err != nil {
-		return err
-	}
-	for _, telephone := range list {
-		fmt.Printf("Имя: %7s\nТелефон: %s\n", telephone.Name, telephone.Telephone)
-	}
-	return nil
-}
+func (c CLI) returnOrder(args []string) error {
+	var order_id int
 
-func (c CLI) deleteContact(args []string) error {
-	var name string
+	fs := flag.NewFlagSet(returnOrder, flag.ContinueOnError)
+	fs.IntVar(&order_id, "order_id", 0, "use --order_id=SomeId")
 
-	fs := flag.NewFlagSet(deleteContact, flag.ContinueOnError)
-	fs.StringVar(&name, "name", "", "use --name=SomeName")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	if len(name) == 0 {
-		return errors.New("name is empty")
+	if order_id == 0 {
+		return errors.New("order_id is empty")
 	}
 
-	return c.Module.DeleteContact(models.Telephone{
-		Name: models.Name(name),
+	return c.Module.ReturnOrder(models.Order{
+		Order_id: order_id,
 	})
 }
 
-func (c CLI) findContact(args []string) error {
-	var name string
+func (c CLI) listOrders(args []string) error {
+	var customer_id int
 
-	fs := flag.NewFlagSet(findContact, flag.ContinueOnError)
-	fs.StringVar(&name, "name", "", "use --name=SomeName")
+	fs := flag.NewFlagSet(listOrders, flag.ContinueOnError)
+	fs.IntVar(&customer_id, "customer_id", 0, "use --customer_id=SomeId")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	if len(name) == 0 {
-		return errors.New("name is empty")
-	}
-
-	telephone, err := c.Module.FindContact(models.Telephone{
-		Name: models.Name(name),
+	list, err := c.Module.ListOrders(models.Order{
+		Customer_id: customer_id,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Имя: %7s\nТелефон: %s\n", telephone.Name, telephone.Telephone)
+	if customer_id == 0 {
+		fmt.Println("Список всех заказов:")
+	} else {
+		fmt.Printf("Список заказов пользователя %d:\n", customer_id)
+	}
+
+	for _, order := range list {
+		fmt.Printf("Заказ №%d, клиент %d\n", order.Order_id, order.Customer_id)
+	}
 	return nil
 }
+
+func (c CLI) issueOrder(args []string) error {
+	var orders string
+
+	fs := flag.NewFlagSet(issueOrder, flag.ContinueOnError)
+	fs.StringVar(&orders, "orders", "", "use --orders=1,2,3")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if len(orders) == 0 {
+		return errors.New("orders list is empty")
+	}
+
+	raw := strings.Split(orders, ",")
+	if len(raw) == 0 {
+		return errors.New("order list is empty")
+	}
+
+	ids := make([]int, 0, len(raw))
+	for _, part := range raw {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		id, err := strconv.Atoi(part)
+		if err != nil {
+			return err
+		}
+		ids = append(ids, id)
+
+	}
+
+	if len(ids) == 0 {
+		return errors.New("order list is empty")
+	}
+
+	return c.Module.IssueOrder(ids)
+}
+
+// func (c CLI) deleteContact(args []string) error {
+// 	var name string
+
+// 	fs := flag.NewFlagSet(deleteContact, flag.ContinueOnError)
+// 	fs.StringVar(&name, "name", "", "use --name=SomeName")
+// 	if err := fs.Parse(args); err != nil {
+// 		return err
+// 	}
+
+// 	if len(name) == 0 {
+// 		return errors.New("name is empty")
+// 	}
+
+// 	return c.Module.DeleteContact(models.Telephone{
+// 		Name: models.Name(name),
+// 	})
+// }
+
+// func (c CLI) findContact(args []string) error {
+// 	var name string
+
+// 	fs := flag.NewFlagSet(findContact, flag.ContinueOnError)
+// 	fs.StringVar(&name, "name", "", "use --name=SomeName")
+
+// 	if err := fs.Parse(args); err != nil {
+// 		return err
+// 	}
+
+// 	if len(name) == 0 {
+// 		return errors.New("name is empty")
+// 	}
+
+// 	telephone, err := c.Module.FindContact(models.Telephone{
+// 		Name: models.Name(name),
+// 	})
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	fmt.Printf("Имя: %7s\nТелефон: %s\n", telephone.Name, telephone.Telephone)
+// 	return nil
+// }
 
 func (c CLI) help() {
 	fmt.Println("command list:")

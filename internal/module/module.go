@@ -1,14 +1,17 @@
 package module
 
 import (
-	"errors"
+	"fmt"
 	"phone_book/internal/models"
+	"time"
 )
 
 type Storage interface {
-	AddContact(telephone models.Telephone) error
-	ListContact() ([]models.Telephone, error)
-	ReWrite(telephones []models.Telephone) error
+	AcceptOrder(order models.Order) error
+	ReturnOrder(order models.Order) error
+	ListOrders(order models.Order) ([]models.Order, error)
+	IssueOrder(ordersIds []int) error
+	// ReWrite(telephones []models.Telephone) error
 }
 
 type Deps struct {
@@ -23,52 +26,117 @@ func NewModule(d Deps) Module {
 	return Module{Deps: d}
 }
 
-func (m Module) AddContact(telephone models.Telephone) error {
-	return m.Storage.AddContact(telephone)
-}
+func (m Module) AcceptOrder(order models.Order) error {
+	layout := "2006-01-02"
+	date := order.Shelf_life
+	targetDate, err := time.Parse(layout, date)
+	if err != nil {
+		return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
+	}
 
-func (m Module) ListContact() ([]models.Telephone, error) {
-	return m.Storage.ListContact()
-}
+	currentDate := time.Now().Truncate(24 * time.Hour)
+	if targetDate.Before(currentDate) {
+		return fmt.Errorf("срок хранения заказа %d в прошлом", order.Order_id)
+	}
 
-func (m Module) DeleteContact(telephone models.Telephone) error {
-	contacts, err := m.Storage.ListContact()
+	existing_orders, err := m.Storage.ListOrders(models.Order{})
 	if err != nil {
 		return err
 	}
-	set := make(map[models.Name]models.Telephone, len(contacts))
-	for _, contact := range contacts {
-		set[contact.Name] = contact
-	}
 
-	_, ok := set[telephone.Name]
-	if !ok {
-		return nil
-	}
-	delete(set, telephone.Name)
+	for _, e := range existing_orders {
+		if e.Order_id == order.Order_id && e.Customer_id == order.Customer_id && !e.Deleted {
+			return fmt.Errorf("заказ %d уже принят этим клиентом", order.Order_id)
+		}
 
-	newContacts := make([]models.Telephone, 0, len(set))
-	for _, value := range set {
-		newContacts = append(newContacts, value)
+		if e.Order_id == order.Order_id && e.Customer_id != order.Customer_id && !e.Deleted {
+			return fmt.Errorf("заказ %d уже принят другим клиентом (ID: %d)", order.Order_id, e.Customer_id)
+		}
 	}
-	return m.Storage.ReWrite(newContacts)
+	return m.Storage.AcceptOrder(order)
 }
 
-func (m Module) FindContact(telephone models.Telephone) (models.Telephone, error) {
-	contacts, err := m.Storage.ListContact()
+func (m Module) ReturnOrder(order models.Order) error {
+	existing_orders, err := m.Storage.ListOrders(models.Order{})
 	if err != nil {
-		return models.Telephone{}, err
+		return err
 	}
 
-	set := make(map[models.Name]models.Telephone, len(contacts))
-	for _, contact := range contacts {
-		set[contact.Name] = contact
+	for _, e := range existing_orders {
+		if e.Order_id == order.Order_id {
+			if e.Deleted {
+				return fmt.Errorf("заказ №%d уже возвращен курьеру", e.Order_id)
+			}
+			if e.Issued {
+				return fmt.Errorf("заказ №%d уже выдан и не может быть возвращен курьеру", order.Order_id)
+			}
+
+			layout := "2006-01-02"
+			date := e.Shelf_life
+			targetDate, err := time.Parse(layout, date)
+			if err != nil {
+				return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
+			}
+
+			currentDate := time.Now().Truncate(24 * time.Hour)
+			if targetDate.After(currentDate) {
+				return fmt.Errorf("срок хранения заказа %d ещё не истёк", order.Order_id)
+			}
+
+			return m.Storage.ReturnOrder(order)
+		}
 	}
 
-	contact, ok := set[telephone.Name]
-	if !ok {
-		return models.Telephone{}, errors.New("contact not found")
+	return fmt.Errorf("заказ %d не найден", order.Order_id)
+}
+
+func (m Module) ListOrders(order models.Order) ([]models.Order, error) {
+	return m.Storage.ListOrders(order)
+}
+
+func (m Module) IssueOrder(ordersIds []int) error {
+	existing_orders, err := m.Storage.ListOrders(models.Order{})
+	if err != nil {
+		return err
 	}
 
-	return contact, nil
+	idToOrder := make(map[int]models.Order, len(existing_orders))
+	for _, o := range existing_orders {
+		idToOrder[o.Order_id] = o
+	}
+
+	var customerId int
+	for i, id := range ordersIds {
+		order, ok := idToOrder[id]
+		if !ok {
+			return fmt.Errorf("заказ %d не найден", id)
+		}
+
+		if order.Deleted {
+			return fmt.Errorf("заказ %d уже возвращен курьеру и не может быть выдан", id)
+		}
+
+		if order.Issued {
+			return fmt.Errorf("заказ %d уже выдан", id)
+		}
+
+		if i == 0 {
+			customerId = order.Customer_id
+		} else if order.Customer_id != customerId {
+			return fmt.Errorf("все заказы должны принадлежать только одному клиенту")
+		}
+
+		layout := "2006-01-02"
+		targetDate, err := time.Parse(layout, order.Shelf_life)
+		if err != nil {
+			return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
+		}
+
+		currentDate := time.Now().Truncate(24 * time.Hour)
+		if targetDate.Before(currentDate) {
+			return fmt.Errorf("срок хранения заказа %d истёк", id)
+		}
+	}
+
+	return m.Storage.IssueOrder(ordersIds)
 }

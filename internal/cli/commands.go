@@ -1,11 +1,13 @@
 package cli
 
 const (
-	help          = "help"
-	addContact    = "add"
-	deleteContact = "delete"
-	listContact   = "list"
-	findContact   = "find"
+	help         = "help"
+	acceptOrder  = "acceptOrder"
+	returnOrder  = "returnOrder"
+	issueOrder   = "issueOrder"
+	listOrders   = "listOrders"
+	acceptReturn = "acceptReturn"
+	listReturns  = "listReturns"
 )
 
 type command struct {
