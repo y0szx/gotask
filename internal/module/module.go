@@ -11,6 +11,8 @@ type Storage interface {
 	ReturnOrder(order models.Order) error
 	ListOrders(order models.Order) ([]models.Order, error)
 	IssueOrder(ordersIds []int) error
+	AcceptReturn(order models.Order) error
+	ListReturns(customer_id int, page, pageSize int) ([]models.Order, error)
 	// ReWrite(telephones []models.Telephone) error
 }
 
@@ -27,9 +29,7 @@ func NewModule(d Deps) Module {
 }
 
 func (m Module) AcceptOrder(order models.Order) error {
-	layout := "2006-01-02"
-	date := order.Shelf_life
-	targetDate, err := time.Parse(layout, date)
+	targetDate, err := time.Parse("2006-01-02", order.Shelf_life)
 	if err != nil {
 		return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
 	}
@@ -71,9 +71,7 @@ func (m Module) ReturnOrder(order models.Order) error {
 				return fmt.Errorf("заказ №%d уже выдан и не может быть возвращен курьеру", order.Order_id)
 			}
 
-			layout := "2006-01-02"
-			date := e.Shelf_life
-			targetDate, err := time.Parse(layout, date)
+			targetDate, err := time.Parse("2006-01-02", e.Shelf_life)
 			if err != nil {
 				return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
 			}
@@ -126,8 +124,7 @@ func (m Module) IssueOrder(ordersIds []int) error {
 			return fmt.Errorf("все заказы должны принадлежать только одному клиенту")
 		}
 
-		layout := "2006-01-02"
-		targetDate, err := time.Parse(layout, order.Shelf_life)
+		targetDate, err := time.Parse("2006-01-02", order.Shelf_life)
 		if err != nil {
 			return fmt.Errorf("некорректный формат даты срока хранения: %v", err)
 		}
@@ -139,4 +136,40 @@ func (m Module) IssueOrder(ordersIds []int) error {
 	}
 
 	return m.Storage.IssueOrder(ordersIds)
+}
+
+func (m Module) AcceptReturn(order models.Order) error {
+	existing_orders, err := m.Storage.ListOrders(order)
+	if err != nil {
+		return err
+	}
+
+	for _, e := range existing_orders {
+		if e.Order_id == order.Order_id {
+			if !e.Issued {
+				return fmt.Errorf("заказ %d не был выдан клиенту %d", e.Order_id, e.Customer_id)
+			}
+
+			if e.Returned {
+				return fmt.Errorf("заказ %d уже был возвращен", e.Order_id)
+			}
+
+			issuedDate, err := time.Parse("2006-01-02", e.Issued_date)
+			if err != nil {
+				return fmt.Errorf("некорректный формат даты выдачи: %v", err)
+			}
+
+			if time.Since(issuedDate) > 48*time.Hour {
+				return fmt.Errorf("с момента выдачи заказа %d прошло больше двух дней", order.Order_id)
+			}
+
+			return m.Storage.AcceptReturn(order)
+		}
+	}
+
+	return fmt.Errorf("заказ %d не найден", order.Order_id)
+}
+
+func (m Module) ListReturns(customer_id int, page, pageSize int) ([]models.Order, error) {
+	return m.Storage.ListReturns(customer_id, page, pageSize)
 }

@@ -9,6 +9,7 @@ type orderRecord struct {
 	Customer_id int    `json:"customer_id"`
 	Shelf_life  string `json:"shelf_life"`
 	Issued      bool   `json:"issued"`
+	Issued_date string `json:"issued_date"`
 	Deleted     bool   `json:"deleted"`
 	Returned    bool   `json:"returned"`
 }
@@ -19,6 +20,7 @@ func (o orderRecord) toDomain() models.Order {
 		Customer_id: o.Customer_id,
 		Shelf_life:  o.Shelf_life,
 		Issued:      o.Issued,
+		Issued_date: o.Issued_date,
 		Deleted:     o.Deleted,
 		Returned:    o.Returned,
 	}
@@ -30,6 +32,7 @@ func transform(order models.Order) orderRecord {
 		Customer_id: int(order.Customer_id),
 		Shelf_life:  string(order.Shelf_life),
 		Issued:      bool(order.Issued),
+		Issued_date: string(order.Issued_date),
 		Deleted:     bool(order.Deleted),
 		Returned:    bool(order.Returned),
 	}

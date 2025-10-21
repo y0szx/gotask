@@ -15,6 +15,8 @@ type Module interface {
 	ReturnOrder(order models.Order) error
 	ListOrders(order models.Order) ([]models.Order, error)
 	IssueOrder(ordersId []int) error
+	AcceptReturn(order models.Order) error
+	ListReturns(customer_id int, page, pageSize int) ([]models.Order, error)
 }
 
 type Deps struct {
@@ -44,7 +46,7 @@ func NewCli(d Deps) CLI {
 			},
 			{
 				name:        issueOrder,
-				description: "выдать заказ клиенту: использование issueOrder --orders_id=[id1, id2, id3, ...]",
+				description: "выдать заказ клиенту: использование issueOrder --orders=1,2,3",
 			},
 			{
 				name:        listOrders,
@@ -56,7 +58,7 @@ func NewCli(d Deps) CLI {
 			},
 			{
 				name:        listReturns,
-				description: "получить список возвратов: использование listReturns --customer_id=someId",
+				description: "получить список возвратов: использование listReturns --customer_id=someId --page=0 --page_size=10",
 			},
 		},
 	}
@@ -81,6 +83,10 @@ func (c CLI) Run() error {
 		return c.listOrders(args[1:])
 	case issueOrder:
 		return c.issueOrder(args[1:])
+	case acceptReturn:
+		return c.acceptReturn(args[1:])
+	case listReturns:
+		return c.listReturns(args[1:])
 	}
 	return fmt.Errorf("command isn't set")
 }
@@ -113,6 +119,7 @@ func (c CLI) acceptOrder(args []string) error {
 		Customer_id: customer_id,
 		Shelf_life:  shelf_life,
 		Issued:      false,
+		Issued_date: "",
 		Deleted:     false,
 		Returned:    false,
 	})
@@ -206,48 +213,72 @@ func (c CLI) issueOrder(args []string) error {
 	return c.Module.IssueOrder(ids)
 }
 
-// func (c CLI) deleteContact(args []string) error {
-// 	var name string
+func (c CLI) acceptReturn(args []string) error {
+	var customer_id, order_id int
+	fs := flag.NewFlagSet(acceptReturn, flag.ContinueOnError)
+	fs.IntVar(&customer_id, "customer_id", 0, "use --customer_id=someId")
+	fs.IntVar(&order_id, "order_id", 0, "use --order_id=someId")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
-// 	fs := flag.NewFlagSet(deleteContact, flag.ContinueOnError)
-// 	fs.StringVar(&name, "name", "", "use --name=SomeName")
-// 	if err := fs.Parse(args); err != nil {
-// 		return err
-// 	}
+	if order_id == 0 {
+		return errors.New("order_id is empty")
+	}
 
-// 	if len(name) == 0 {
-// 		return errors.New("name is empty")
-// 	}
+	if customer_id == 0 {
+		return errors.New("customer_id is empty")
+	}
 
-// 	return c.Module.DeleteContact(models.Telephone{
-// 		Name: models.Name(name),
-// 	})
-// }
+	return c.Module.AcceptReturn(models.Order{
+		Order_id:    order_id,
+		Customer_id: customer_id,
+	})
+}
 
-// func (c CLI) findContact(args []string) error {
-// 	var name string
+func (c CLI) listReturns(args []string) error {
+	var customer_id int
+	var page, pageSize int
 
-// 	fs := flag.NewFlagSet(findContact, flag.ContinueOnError)
-// 	fs.StringVar(&name, "name", "", "use --name=SomeName")
+	fs := flag.NewFlagSet(listReturns, flag.ContinueOnError)
+	fs.IntVar(&customer_id, "customer_id", 0, "use --customer_id=someId")
+	fs.IntVar(&page, "page", 0, "use --page=0 (номер страницы, начиная с 0)")
+	fs.IntVar(&pageSize, "page_size", 10, "use --page_size=10 (размер страницы)")
 
-// 	if err := fs.Parse(args); err != nil {
-// 		return err
-// 	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
-// 	if len(name) == 0 {
-// 		return errors.New("name is empty")
-// 	}
+	if page < 0 {
+		return errors.New("page must be >= 0")
+	}
 
-// 	telephone, err := c.Module.FindContact(models.Telephone{
-// 		Name: models.Name(name),
-// 	})
-// 	if err != nil {
-// 		return err
-// 	}
+	if pageSize <= 0 {
+		return errors.New("page_size must be > 0")
+	}
 
-// 	fmt.Printf("Имя: %7s\nТелефон: %s\n", telephone.Name, telephone.Telephone)
-// 	return nil
-// }
+	list, err := c.Module.ListReturns(customer_id, page, pageSize)
+	if err != nil {
+		return err
+	}
+
+	if customer_id == 0 {
+		fmt.Printf("Список возвратов (страница %d, размер %d):\n", page, pageSize)
+	} else {
+		fmt.Printf("Список возвратов клиента %d (страница %d, размер %d):\n", customer_id, page, pageSize)
+	}
+
+	if len(list) == 0 {
+		fmt.Println("Возвратов не найдено")
+		return nil
+	}
+
+	for _, order := range list {
+		fmt.Printf("Заказ №%d, клиент %d, дата выдачи: %s\n", order.Order_id, order.Customer_id, order.Issued_date)
+	}
+
+	return nil
+}
 
 func (c CLI) help() {
 	fmt.Println("command list:")

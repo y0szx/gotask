@@ -5,6 +5,7 @@ type Order struct {
 	Customer_id int
 	Shelf_life  string
 	Issued      bool
+	Issued_date string
 	Deleted     bool
 	Returned    bool
 }
