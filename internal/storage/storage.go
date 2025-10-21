@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"phone_book/internal/hash"
 	"phone_book/internal/models"
 	"time"
 )
@@ -33,6 +34,8 @@ func (s Storage) AcceptOrder(order models.Order) error {
 		return errUnmarshal
 	}
 
+	order.Hash = hash.GenerateHash()
+
 	records = append(records, transform(order))
 
 	bWrite, errMarshal := json.MarshalIndent(records, "  ", "  ")
@@ -41,27 +44,6 @@ func (s Storage) AcceptOrder(order models.Order) error {
 	}
 
 	return os.WriteFile(s.fileName, bWrite, 0666)
-}
-
-func (s Storage) ReWrite(orders []models.Order) error {
-	if _, err := os.Stat(s.fileName); errors.Is(err, os.ErrNotExist) {
-		if errCreateFile := s.createFile(); errCreateFile != nil {
-			return errCreateFile
-		}
-	}
-
-	var records []orderRecord
-	for _, order := range orders {
-		records = append(records, transform(order))
-	}
-
-	bWrite, errMarshal := json.MarshalIndent(records, "  ", "  ")
-	if errMarshal != nil {
-		return errMarshal
-	}
-
-	return os.WriteFile(s.fileName, bWrite, 0666)
-
 }
 
 func (s Storage) ListOrders(order models.Order) ([]models.Order, error) {
@@ -99,6 +81,7 @@ func (s Storage) ReturnOrder(order models.Order) error {
 	for i, record := range records {
 		if record.Order_id == order.Order_id {
 			records[i].Deleted = true
+			records[i].Hash = hash.GenerateHash()
 			found = true
 			break
 		}
@@ -137,6 +120,7 @@ func (s Storage) IssueOrder(ordersIds []int) error {
 		if _, ok := idSet[records[i].Order_id]; ok {
 			records[i].Issued = true
 			records[i].Issued_date = time.Now().Format("2006-01-02")
+			records[i].Hash = hash.GenerateHash()
 			marked[records[i].Order_id] = true
 		}
 	}
@@ -170,6 +154,7 @@ func (s Storage) AcceptReturn(order models.Order) error {
 	for i, record := range records {
 		if record.Order_id == order.Order_id {
 			records[i].Returned = true
+			records[i].Hash = hash.GenerateHash()
 			found = true
 			break
 		}

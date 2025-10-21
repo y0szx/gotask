@@ -13,7 +13,6 @@ type Storage interface {
 	IssueOrder(ordersIds []int) error
 	AcceptReturn(order models.Order) error
 	ListReturns(customer_id int, page, pageSize int) ([]models.Order, error)
-	// ReWrite(telephones []models.Telephone) error
 }
 
 type Deps struct {
@@ -35,7 +34,7 @@ func (m Module) AcceptOrder(order models.Order) error {
 	}
 
 	currentDate := time.Now().Truncate(24 * time.Hour)
-	if targetDate.Before(currentDate) {
+	if !targetDate.After(currentDate) {
 		return fmt.Errorf("срок хранения заказа %d в прошлом", order.Order_id)
 	}
 
@@ -45,12 +44,12 @@ func (m Module) AcceptOrder(order models.Order) error {
 	}
 
 	for _, e := range existing_orders {
-		if e.Order_id == order.Order_id && e.Customer_id == order.Customer_id && !e.Deleted {
-			return fmt.Errorf("заказ %d уже принят этим клиентом", order.Order_id)
-		}
-
-		if e.Order_id == order.Order_id && e.Customer_id != order.Customer_id && !e.Deleted {
-			return fmt.Errorf("заказ %d уже принят другим клиентом (ID: %d)", order.Order_id, e.Customer_id)
+		if e.Order_id == order.Order_id {
+			if e.Customer_id == order.Customer_id {
+				return fmt.Errorf("заказ %d уже существует в системе (ID клиента: %d)", order.Order_id, order.Customer_id)
+			} else {
+				return fmt.Errorf("заказ %d уже существует в системе (принадлежит клиенту ID: %d)", order.Order_id, e.Customer_id)
+			}
 		}
 	}
 	return m.Storage.AcceptOrder(order)
@@ -77,7 +76,7 @@ func (m Module) ReturnOrder(order models.Order) error {
 			}
 
 			currentDate := time.Now().Truncate(24 * time.Hour)
-			if targetDate.After(currentDate) {
+			if !targetDate.Before(currentDate) {
 				return fmt.Errorf("срок хранения заказа %d ещё не истёк", order.Order_id)
 			}
 

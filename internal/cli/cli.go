@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"phone_book/internal/models"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type Module interface {
@@ -64,33 +67,6 @@ func NewCli(d Deps) CLI {
 	}
 }
 
-func (c CLI) Run() error {
-	args := os.Args[1:]
-	if len(args) == 0 {
-		return fmt.Errorf("command isn't set")
-	}
-
-	commandName := args[0]
-	switch commandName {
-	case help:
-		c.help()
-		return nil
-	case acceptOrder:
-		return c.acceptOrder(args[1:])
-	case returnOrder:
-		return c.returnOrder(args[1:])
-	case listOrders:
-		return c.listOrders(args[1:])
-	case issueOrder:
-		return c.issueOrder(args[1:])
-	case acceptReturn:
-		return c.acceptReturn(args[1:])
-	case listReturns:
-		return c.listReturns(args[1:])
-	}
-	return fmt.Errorf("command isn't set")
-}
-
 func (c CLI) acceptOrder(args []string) error {
 	var order_id, customer_id int
 	var shelf_life string
@@ -119,7 +95,6 @@ func (c CLI) acceptOrder(args []string) error {
 		Customer_id: customer_id,
 		Shelf_life:  shelf_life,
 		Issued:      false,
-		Issued_date: "",
 		Deleted:     false,
 		Returned:    false,
 	})
@@ -285,4 +260,70 @@ func (c CLI) help() {
 	for _, cmd := range c.commandList {
 		fmt.Println("", cmd.name, cmd.description)
 	}
+}
+
+func (c CLI) Run() error {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\nПрограмма завершена")
+		os.Exit(0)
+	}()
+
+	scanner := bufio.NewScanner(os.Stdin)
+
+	fmt.Println("Добро пожаловать в систему управления заказами!")
+	fmt.Println("Введите 'help' для просмотра доступных команд или 'exit' для выхода")
+
+	for {
+		fmt.Print("pvz> ")
+		if !scanner.Scan() {
+			break
+		}
+
+		input := strings.TrimSpace(scanner.Text())
+		if input == "" {
+			continue
+		}
+
+		if input == "exit" {
+			break
+		}
+
+		args := strings.Fields(input)
+		if len(args) == 0 {
+			continue
+		}
+
+		if err := c.executeCommand(args); err != nil {
+			fmt.Printf("Ошибка: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+func (c CLI) executeCommand(args []string) error {
+	commandName := args[0]
+	switch commandName {
+	case help:
+		c.help()
+		return nil
+	case acceptOrder:
+		return c.acceptOrder(args[1:])
+	case returnOrder:
+		return c.returnOrder(args[1:])
+	case listOrders:
+		return c.listOrders(args[1:])
+	case issueOrder:
+		return c.issueOrder(args[1:])
+	case acceptReturn:
+		return c.acceptReturn(args[1:])
+	case listReturns:
+		return c.listReturns(args[1:])
+	case exit:
+		return nil
+	}
+	return fmt.Errorf("неизвестная команда: %s. Введите 'help' для просмотра доступных команд", commandName)
 }

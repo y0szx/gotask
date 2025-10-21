@@ -8,4 +8,5 @@ type Order struct {
 	Issued_date string
 	Deleted     bool
 	Returned    bool
+	Hash        string
 }

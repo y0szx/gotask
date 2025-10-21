@@ -12,6 +12,7 @@ type orderRecord struct {
 	Issued_date string `json:"issued_date"`
 	Deleted     bool   `json:"deleted"`
 	Returned    bool   `json:"returned"`
+	Hash        string `json:"hash"`
 }
 
 func (o orderRecord) toDomain() models.Order {
@@ -23,6 +24,7 @@ func (o orderRecord) toDomain() models.Order {
 		Issued_date: o.Issued_date,
 		Deleted:     o.Deleted,
 		Returned:    o.Returned,
+		Hash:        o.Hash,
 	}
 }
 
@@ -35,5 +37,6 @@ func transform(order models.Order) orderRecord {
 		Issued_date: string(order.Issued_date),
 		Deleted:     bool(order.Deleted),
 		Returned:    bool(order.Returned),
+		Hash:        string(order.Hash),
 	}
 }
